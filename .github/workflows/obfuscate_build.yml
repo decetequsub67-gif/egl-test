@@ -1,0 +1,58 @@
+name: obfuscated-build
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore cached Hikari toolchain
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: C:\hikari-install
+          key: hikari-llvm15.0.2-clang-v1
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Free disk space (first run only)
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          if exist C:\Android rmdir /s /q C:\Android
+          for /d %%d in (C:\hostedtoolcache\windows\Qt_*) do rmdir /s /q "%%d"
+
+      - name: Build Hikari clang toolchain (first run only, ~2-3h)
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          choco install ninja -y --no-progress
+          git clone --depth 1 https://github.com/Equati0n/Hikari-LLVM15.0.2.git C:\hikari-src
+          cmake -G Ninja -S C:\hikari-src\llvm -B C:\hikari-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DLLVM_ENABLE_PROJECTS=clang -DLLVM_TARGETS_TO_BUILD=X86 -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_DOCS=OFF -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ASSERTIONS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build C:\hikari-build --target clang-cl
+          mkdir C:\hikari-install\bin
+          mkdir C:\hikari-install\lib
+          copy C:\hikari-build\bin\clang-cl.exe C:\hikari-install\bin\
+          xcopy /E /I /Y C:\hikari-build\lib\clang C:\hikari-install\lib\clang
+
+      - name: Add toolchain to PATH
+        shell: pwsh
+        run: Add-Content $env:GITHUB_PATH "C:\hikari-install\bin"
+
+      - name: Compile obfuscated binary (Hikari flags)
+        shell: cmd
+        working-directory: Project3
+        run: |
+          clang-cl /O2 /GS- -mllvm -enable-cffobf -mllvm -enable-bcfobf -mllvm -enable-strcry -mllvm -enable-subobf main.cpp /link /SUBSYSTEM:CONSOLE /NODEFAULTLIB /ENTRY:__dummy_entry /DYNAMICBASE:NO /BASE:0x1E2F000000 /INCREMENTAL:NO kernel32.lib
+          python crypt.py
+
+      - name: Upload obfuscated exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: obfuscated-binary
+          path: Project3\main.exe

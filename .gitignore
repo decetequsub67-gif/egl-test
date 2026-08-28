@@ -1,0 +1,12 @@
+.vs/
+x64/
+Project3/main.obj
+Project3/main.exe
+*.i64
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.idb
+*.user
